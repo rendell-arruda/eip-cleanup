@@ -1,0 +1,12 @@
+{
+  "AllocationId": "eipalloc-0efd0b83814d6becc",
+  "AssociationId": "eipassoc-0c073ea3e53179bf6",
+  "Domain": "vpc",
+  "NetworkInterfaceId": "eni-0422d4af6bf0e0d1e",
+  "NetworkInterfaceOwnerId": "266549158321",
+  "PrivateIpAddress": "172.31.28.197",
+  "PublicIpv4Pool": "amazon",
+  "NetworkBorderGroup": "us-east-1",
+  "InstanceId": "i-06e864a728af8b4f0",
+  "PublicIp": "3.208.195.207"
+}
