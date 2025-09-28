@@ -34,6 +34,9 @@ def parse_arguments():
     # Adiciona o argumento '--regions'. Recebe uma lista de regiões separadas por vírgula.
     p.add_argument("--regions", help="Regiões CSV (ex: us-east-1,us-west-2). Se omitido, usa us-east-1 como padrão.", default=None)
     
+    # Adiciona o argumento '--whitelist'. Recebe o caminho para um arquivo de whitelist.
+    p.add_argument("--whitelist", help="Caminho parao arquivo com AllocationId por linha que nao devem ser removidos.", default=None)
+    
     return p.parse_args() # Analisa os argumentos e retorna um objeto com os valores
 
 def get_regions(region_arg):
@@ -48,7 +51,7 @@ def get_regions(region_arg):
     # Se o argumento não foi usado, retorna a região padrão 'us-east-1'
     return ["us-east-1"]
 
-def find_unassociated_in_region(region):
+def find_unassociated_in_region(region, whitelist):
     """
     Encontra e retorna uma lista de EIPs que não estão associados em uma região específica.
     """
@@ -74,42 +77,65 @@ def find_unassociated_in_region(region):
         # 'bool(...)' converte o valor em True se ele existir, e False se for vazio.
         associated = bool(addr.get("AssociationId") or addr.get("InstanceId") or addr.get("NetworkInterfaceId"))
         
-        # Se a variável 'associated' for False, significa que o EIP está ocioso
+        allocation_id = addr.get("AllocationId") # Pega o AllocationId do EIP atual
+        if allocation_id and allocation_id in whitelist:
+            logger.info(f"[{region}] EIP {addr['PublicIp']} (AllocationId: {allocation_id}) está na whitelist. Ignorando.")
+            continue # Pula para o próximo EIP se este estiver na whitelist
+        
         if not associated:
             results.append({
                 "Region": region,
                 "PublicIp": addr.get("PublicIp"),
-                "AllocationId": addr.get("AllocationId"),
-            })
-            
+                "AllocationId": allocation_id 
+                })
+                
     return results # Retorna a lista de EIPs ociosos encontrados
 
+def load_whitelist(path):
+    """
+    lê um arquivo de whitelist e retorna um Set de AllocationIds.
+    """
+    if not path:
+        logger.ingo("Nenhum arquivo de whitelist fornecido.")
+        return set()# Retorna um Set vazio se nenhum caminho for fornecido
+    
+    wl = set() # Cria um Set vazio para guardar os AllocationIds da whitelist
+    try:
+        with open(path, "r") as f:
+            for line in f:
+                val = line.strip()
+                if val:
+                    wl.add(val)
+        logger.info(f"Whitelist carregada com {len(wl)} entradas.")
+        return wl
+    except FileNotFoundError:
+        logger.error(f"Arquivo da whitelist '{path}' não encontrado. Ignorando.")
+        return set()
+        
+        
 # Início do ponto de entrada do script
 if __name__== "__main__":
-    # Chama a função para analisar os argumentos de linha de comando
     args = parse_arguments()
     
-    # Pega a lista de regiões a serem verificadas (usando o argumento ou o padrão)
     regions = get_regions(args.regions)
     logger.info(f"Regiões a serem verificadas: {regions}")
     
-    all_unassociated_eips = [] # Lista para guardar os resultados de todas as regiões
+    # Nova linha para carregar a whitelist
+    whitelist = load_whitelist(args.whitelist)
     
-    # Itera sobre cada região na lista
+    all_unassociated_eips = []
+    
     for region in regions:
-        # Chama a função que busca EIPs ociosos para a região atual
-        unassociated_eips = find_unassociated_in_region(region)
+        # Passa a whitelist como argumento para a função
+        unassociated_eips = find_unassociated_in_region(region, whitelist)
         
-        logger.info(f"[{region}] {len(unassociated_eips)} EIPs não associados encontrados.\n")
-        
-        # Adiciona os EIPs encontrados nesta região à lista geral
+        logger.info(f"[{region}] {len(unassociated_eips)} EIPs não associados encontrados.")
         all_unassociated_eips.extend(unassociated_eips)
         
-    # Verifica se algum EIP ocioso foi encontrado em todas as regiões
     if all_unassociated_eips:
         logger.info(f"\n--- Resumo ---")
         logger.info(f"Total de EIPs não associados encontrados: {len(all_unassociated_eips)}")
         for eip in all_unassociated_eips:
-            logger.info(f"- IP: {eip['PublicIp']} ({eip['Region']})")
+            logger.info(f"- IP: {eip['PublicIp']} ({eip['Region']}) - AllocationId: {eip['AllocationId']}")
     else:
         logger.info(f"Nenhum EIP não associado encontrado em todas as regiões verificadas.")
